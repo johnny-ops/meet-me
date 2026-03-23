@@ -8,9 +8,14 @@ const httpServer = createServer(app)
 
 app.use(cors())
 
+// Get allowed origins from environment or use defaults
+const allowedOrigins = process.env.CLIENT_URL 
+  ? process.env.CLIENT_URL.split(',')
+  : ['http://localhost:3000']
+
 const io = new Server(httpServer, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: allowedOrigins,
     methods: ['GET', 'POST']
   }
 })
