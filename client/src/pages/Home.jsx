@@ -25,7 +25,7 @@ function Home() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-black">
       <div className="text-center space-y-8 p-8">
-        <h1 className="text-5xl font-bold text-white mb-12">Meet Clone</h1>
+        <h1 className="text-5xl font-bold text-white mb-12">Meet Me</h1>
         
         <div className="space-y-6">
           {/* Create Meeting Button */}
