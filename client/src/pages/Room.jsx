@@ -203,36 +203,48 @@ function Room() {
 
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-      // Stop screen sharing
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      const videoTrack = stream.getVideoTracks()[0]
-      
-      Object.values(peerConnections.current).forEach(pc => {
-        const sender = pc.getSenders().find(s => s.track.kind === 'video')
-        if (sender) sender.replaceTrack(videoTrack)
-      })
-      
-      localStream.getVideoTracks()[0].stop()
-      localStream.removeTrack(localStream.getVideoTracks()[0])
-      localStream.addTrack(videoTrack)
-      setLocalStream(stream)
-      setIsScreenSharing(false)
-    } else {
-      // Start screen sharing
+      // Stop screen sharing - return to camera
       try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true })
-        const screenTrack = screenStream.getVideoTracks()[0]
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        const videoTrack = stream.getVideoTracks()[0]
         
         Object.values(peerConnections.current).forEach(pc => {
-          const sender = pc.getSenders().find(s => s.track.kind === 'video')
+          const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video')
+          if (sender) sender.replaceTrack(videoTrack)
+        })
+        
+        // Stop the screen share track
+        const screenTrack = localStream.getVideoTracks()[0]
+        screenTrack.stop()
+        
+        // Replace with camera track
+        localStream.removeTrack(screenTrack)
+        localStream.addTrack(videoTrack)
+        setLocalStream(stream)
+        setIsScreenSharing(false)
+      } catch (error) {
+        console.error('Error returning to camera:', error)
+      }
+    } else {
+      // Start screen sharing - keep camera in corner
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
+          video: true,
+          audio: false
+        })
+        const screenTrack = screenStream.getVideoTracks()[0]
+        
+        // Send screen to peers
+        Object.values(peerConnections.current).forEach(pc => {
+          const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video')
           if (sender) sender.replaceTrack(screenTrack)
         })
         
-        const oldTrack = localStream.getVideoTracks()[0]
-        localStream.removeTrack(oldTrack)
-        localStream.addTrack(screenTrack)
+        // Keep local camera but show screen share indicator
+        screenTrack.onended = () => {
+          toggleScreenShare() // Auto-stop when user stops sharing
+        }
         
-        screenTrack.onended = () => toggleScreenShare()
         setIsScreenSharing(true)
       } catch (error) {
         console.error('Error sharing screen:', error)
