@@ -26,6 +26,7 @@ function Room() {
   const [showParticipants, setShowParticipants] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
   
   const peerConnections = useRef({})
   const mediaRecorder = useRef(null)
@@ -37,6 +38,31 @@ function Room() {
     navigator.clipboard.writeText(link)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  // Share meeting link
+  const shareMeetingLink = async () => {
+    const link = window.location.href
+    const shareData = {
+      title: 'Join my meeting',
+      text: `Join my video meeting on MeetMe`,
+      url: link
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData)
+      } else {
+        // Fallback to copy
+        copyRoomLink()
+        setShowShareModal(true)
+        setTimeout(() => setShowShareModal(false), 3000)
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Error sharing:', error)
+      }
+    }
   }
 
   // Generate guest username
@@ -116,29 +142,44 @@ function Room() {
     if (!socket || !localStream) return
 
     socket.on('offer', async ({ offer, fromUserId }) => {
-      const pc = createPeerConnection(fromUserId)
-      await pc.setRemoteDescription(new RTCSessionDescription(offer))
-      const answer = await pc.createAnswer()
-      await pc.setLocalDescription(answer)
-      socket.emit('answer', { answer, toUserId: fromUserId })
+      try {
+        const pc = createPeerConnection(fromUserId)
+        await pc.setRemoteDescription(new RTCSessionDescription(offer))
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        socket.emit('answer', { answer, toUserId: fromUserId })
+      } catch (error) {
+        console.error('Error handling offer:', error)
+      }
     })
 
     socket.on('answer', async ({ answer, fromUserId }) => {
-      const pc = peerConnections.current[fromUserId]
-      if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer))
+      try {
+        const pc = peerConnections.current[fromUserId]
+        if (pc && pc.signalingState !== 'stable') {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer))
+        }
+      } catch (error) {
+        console.error('Error handling answer:', error)
       }
     })
 
     socket.on('ice-candidate', async ({ candidate, fromUserId }) => {
-      const pc = peerConnections.current[fromUserId]
-      if (pc && candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate))
+      try {
+        const pc = peerConnections.current[fromUserId]
+        if (pc && candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate))
+        }
+      } catch (error) {
+        console.error('Error adding ICE candidate:', error)
       }
     })
 
     socket.on('ready-to-connect', ({ userId }) => {
-      createOffer(userId)
+      // Small delay to ensure both peers are ready
+      setTimeout(() => {
+        createOffer(userId)
+      }, 100)
     })
 
     return () => {
@@ -150,21 +191,33 @@ function Room() {
   }, [socket, localStream])
 
   const createPeerConnection = (userId) => {
+    // Close existing connection if any
+    if (peerConnections.current[userId]) {
+      peerConnections.current[userId].close()
+    }
+
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
     })
 
+    // Add local tracks
     localStream.getTracks().forEach(track => {
       pc.addTrack(track, localStream)
     })
 
+    // Handle incoming tracks
     pc.ontrack = (event) => {
+      console.log('Received track from:', userId)
       setPeers(prev => ({
         ...prev,
         [userId]: event.streams[0]
       }))
     }
 
+    // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit('ice-candidate', {
@@ -174,15 +227,35 @@ function Room() {
       }
     }
 
+    // Handle connection state changes
+    pc.onconnectionstatechange = () => {
+      console.log(`Connection state with ${userId}:`, pc.connectionState)
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        // Try to reconnect
+        setTimeout(() => {
+          if (pc.connectionState === 'failed') {
+            pc.restartIce()
+          }
+        }, 1000)
+      }
+    }
+
     peerConnections.current[userId] = pc
     return pc
   }
 
   const createOffer = async (userId) => {
-    const pc = createPeerConnection(userId)
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-    socket.emit('offer', { offer, toUserId: userId })
+    try {
+      const pc = createPeerConnection(userId)
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      })
+      await pc.setLocalDescription(offer)
+      socket.emit('offer', { offer, toUserId: userId })
+    } catch (error) {
+      console.error('Error creating offer:', error)
+    }
   }
 
   const toggleMute = () => {
@@ -208,41 +281,63 @@ function Room() {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         const videoTrack = stream.getVideoTracks()[0]
         
+        // Send camera back to all peers
         Object.values(peerConnections.current).forEach(pc => {
           const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video')
-          if (sender) sender.replaceTrack(videoTrack)
+          if (sender) {
+            sender.replaceTrack(videoTrack)
+          }
         })
         
-        // Stop the screen share track
-        const screenTrack = localStream.getVideoTracks()[0]
-        screenTrack.stop()
-        
-        // Replace with camera track
-        localStream.removeTrack(screenTrack)
+        // Update local stream
+        const oldVideoTrack = localStream.getVideoTracks()[0]
+        if (oldVideoTrack) {
+          oldVideoTrack.stop()
+          localStream.removeTrack(oldVideoTrack)
+        }
         localStream.addTrack(videoTrack)
-        setLocalStream(stream)
+        
         setIsScreenSharing(false)
       } catch (error) {
         console.error('Error returning to camera:', error)
       }
     } else {
-      // Start screen sharing - keep camera in corner
+      // Start screen sharing
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
-          video: true,
+          video: {
+            cursor: 'always'
+          },
           audio: false
         })
         const screenTrack = screenStream.getVideoTracks()[0]
         
-        // Send screen to peers
+        // Send screen to all peers
         Object.values(peerConnections.current).forEach(pc => {
           const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video')
-          if (sender) sender.replaceTrack(screenTrack)
+          if (sender) {
+            sender.replaceTrack(screenTrack)
+          }
         })
         
-        // Keep local camera but show screen share indicator
+        // Handle when user stops sharing via browser UI
         screenTrack.onended = () => {
-          toggleScreenShare() // Auto-stop when user stops sharing
+          setIsScreenSharing(false)
+          // Return to camera automatically
+          navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+              const videoTrack = stream.getVideoTracks()[0]
+              Object.values(peerConnections.current).forEach(pc => {
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video')
+                if (sender) sender.replaceTrack(videoTrack)
+              })
+              const oldVideoTrack = localStream.getVideoTracks()[0]
+              if (oldVideoTrack) {
+                oldVideoTrack.stop()
+                localStream.removeTrack(oldVideoTrack)
+              }
+              localStream.addTrack(videoTrack)
+            })
         }
         
         setIsScreenSharing(true)
@@ -309,54 +404,77 @@ function Room() {
   return (
     <div className="h-screen flex flex-col bg-black">
       {/* Header */}
-      <div className="bg-gray-900 px-6 py-4 flex items-center justify-between border-b border-gray-800 shadow-lg">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-black" fill="currentColor" viewBox="0 0 20 20">
+      <div className="bg-gray-900 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between border-b border-gray-800 shadow-lg">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-lg flex items-center justify-center">
+              <svg className="w-4 h-4 sm:w-6 sm:h-6 text-black" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
               </svg>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold text-white">Room: {roomId}</h2>
+                <h2 className="text-sm sm:text-lg font-semibold text-white truncate max-w-[100px] sm:max-w-none">
+                  {roomId}
+                </h2>
                 <button
                   onClick={copyRoomLink}
-                  className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors group relative"
+                  className="p-1 sm:p-1.5 hover:bg-gray-800 rounded-lg transition-colors group relative"
                   title="Copy room link"
                 >
                   {copied ? (
-                    <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   ) : (
-                    <svg className="w-4 h-4 text-gray-400 group-hover:text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400 group-hover:text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
                       <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
                     </svg>
                   )}
+                </button>
+                <button
+                  onClick={shareMeetingLink}
+                  className="p-1 sm:p-1.5 hover:bg-gray-800 rounded-lg transition-colors group relative"
+                  title="Share meeting link"
+                >
+                  <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400 group-hover:text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" />
+                  </svg>
                 </button>
               </div>
               <p className="text-xs text-gray-400">{participants.length} participant{participants.length !== 1 ? 's' : ''}</p>
             </div>
           </div>
           {isRecording && (
-            <div className="flex items-center gap-2 bg-red-600/20 px-3 py-1.5 rounded-lg border border-red-600/50">
+            <div className="hidden sm:flex items-center gap-2 bg-red-600/20 px-3 py-1.5 rounded-lg border border-red-600/50">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
               <span className="text-red-500 text-sm font-medium">Recording</span>
             </div>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="hidden sm:block text-right">
             <p className="text-xs text-gray-400">Logged in as</p>
             <p className="text-sm font-medium text-white">{username}</p>
           </div>
-          <div className="w-10 h-10 bg-gradient-to-br from-white to-gray-300 rounded-full flex items-center justify-center font-bold text-black shadow-lg">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-white to-gray-300 rounded-full flex items-center justify-center font-bold text-black shadow-lg text-sm sm:text-base">
             {username.charAt(0).toUpperCase()}
           </div>
         </div>
       </div>
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-900 border border-gray-700 rounded-lg px-6 py-3 shadow-2xl z-50 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+            <p className="text-white font-medium">Link copied to clipboard!</p>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
