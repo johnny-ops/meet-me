@@ -92,6 +92,15 @@ io.on('connection', (socket) => {
     })
   })
 
+  // Screen sharing status
+  socket.on('screen-sharing-status', ({ roomId, isSharing, username }) => {
+    socket.to(roomId).emit('user-screen-sharing', {
+      userId: socket.id,
+      isSharing,
+      username
+    })
+  })
+
   // Handle disconnect
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id)

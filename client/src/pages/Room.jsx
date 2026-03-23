@@ -27,6 +27,7 @@ function Room() {
   const [isLoading, setIsLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [screenSharingUsers, setScreenSharingUsers] = useState({}) // Track who is sharing
   
   const peerConnections = useRef({})
   const mediaRecorder = useRef(null)
@@ -103,6 +104,18 @@ function Room() {
 
     newSocket.on('participants-list', (participantsList) => {
       setParticipants(participantsList)
+    })
+
+    newSocket.on('user-screen-sharing', ({ userId, isSharing, username: sharingUsername }) => {
+      setScreenSharingUsers(prev => {
+        const updated = { ...prev }
+        if (isSharing) {
+          updated[userId] = sharingUsername
+        } else {
+          delete updated[userId]
+        }
+        return updated
+      })
     })
 
     return () => {
@@ -298,6 +311,15 @@ function Room() {
         localStream.addTrack(videoTrack)
         
         setIsScreenSharing(false)
+        
+        // Notify others that screen sharing stopped
+        if (socket) {
+          socket.emit('screen-sharing-status', { 
+            roomId, 
+            isSharing: false,
+            username 
+          })
+        }
       } catch (error) {
         console.error('Error returning to camera:', error)
       }
@@ -323,6 +345,14 @@ function Room() {
         // Handle when user stops sharing via browser UI
         screenTrack.onended = () => {
           setIsScreenSharing(false)
+          // Notify others
+          if (socket) {
+            socket.emit('screen-sharing-status', { 
+              roomId, 
+              isSharing: false,
+              username 
+            })
+          }
           // Return to camera automatically
           navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
@@ -341,6 +371,15 @@ function Room() {
         }
         
         setIsScreenSharing(true)
+        
+        // Notify others that screen sharing started
+        if (socket) {
+          socket.emit('screen-sharing-status', { 
+            roomId, 
+            isSharing: true,
+            username 
+          })
+        }
       } catch (error) {
         console.error('Error sharing screen:', error)
       }
@@ -487,6 +526,8 @@ function Room() {
             participants={participants}
             isVideoOff={isVideoOff}
             isMuted={isMuted}
+            isScreenSharing={isScreenSharing}
+            screenSharingUsers={screenSharingUsers}
           />
         </div>
 

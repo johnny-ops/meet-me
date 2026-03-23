@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-function VideoGrid({ localStream, peers, username, participants, isVideoOff, isMuted }) {
+function VideoGrid({ localStream, peers, username, participants, isVideoOff, isMuted, isScreenSharing, screenSharingUsers }) {
   const localVideoRef = useRef(null)
 
   useEffect(() => {
@@ -53,6 +53,16 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
           </div>
         )}
         
+        {/* Screen Sharing Indicator */}
+        {isScreenSharing && (
+          <div className="absolute top-3 right-3 bg-blue-600 px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-lg animate-pulse">
+            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
+            </svg>
+            <span className="text-white text-xs font-medium">Sharing Screen</span>
+          </div>
+        )}
+        
         {/* Overlay info */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
           <div className="absolute bottom-0 left-0 right-0 p-4">
@@ -83,12 +93,14 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
       {/* Peer Videos */}
       {Object.entries(peers).map(([userId, stream]) => {
         const participant = participants.find(p => p.userId === userId)
+        const isSharing = screenSharingUsers && screenSharingUsers[userId]
         return (
           <PeerVideo
             key={userId}
             stream={stream}
             username={participant?.username || 'Guest'}
             videoHeight={getVideoHeight()}
+            isScreenSharing={isSharing}
           />
         )
       })}
@@ -96,7 +108,7 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
   )
 }
 
-function PeerVideo({ stream, username, videoHeight }) {
+function PeerVideo({ stream, username, videoHeight, isScreenSharing }) {
   const videoRef = useRef(null)
   const [hasVideo, setHasVideo] = useState(true)
 
@@ -130,6 +142,16 @@ function PeerVideo({ stream, username, videoHeight }) {
             </div>
             <p className="text-white text-sm font-medium">{username}</p>
           </div>
+        </div>
+      )}
+
+      {/* Screen Sharing Indicator */}
+      {isScreenSharing && (
+        <div className="absolute top-3 right-3 bg-blue-600 px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-lg animate-pulse">
+          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
+          </svg>
+          <span className="text-white text-xs font-medium">Sharing Screen</span>
         </div>
       )}
 
