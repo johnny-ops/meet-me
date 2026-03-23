@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 function VideoGrid({ localStream, peers, username, participants, isVideoOff, isMuted }) {
   const localVideoRef = useRef(null)
@@ -149,8 +149,5 @@ function PeerVideo({ stream, username, videoHeight }) {
     </div>
   )
 }
-
-// Add useState import
-import { useState } from 'react'
 
 export default VideoGrid

@@ -5,6 +5,7 @@ import VideoGrid from '../components/VideoGrid'
 import ControlBar from '../components/ControlBar'
 import Chat from '../components/Chat'
 import ParticipantsList from '../components/ParticipantsList'
+import LoadingSpinner from '../components/LoadingSpinner'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'
 
@@ -23,10 +24,20 @@ function Room() {
   const [isRecording, setIsRecording] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const [showParticipants, setShowParticipants] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
   
   const peerConnections = useRef({})
   const mediaRecorder = useRef(null)
   const recordedChunks = useRef([])
+
+  // Copy room link
+  const copyRoomLink = () => {
+    const link = window.location.href
+    navigator.clipboard.writeText(link)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   // Generate guest username
   useEffect(() => {
@@ -77,13 +88,18 @@ function Room() {
   useEffect(() => {
     const initMedia = async () => {
       try {
+        setIsLoading(true)
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true
         })
         setLocalStream(stream)
+        setIsLoading(false)
       } catch (error) {
         console.error('Error accessing media devices:', error)
+        alert('Could not access camera/microphone. Please check permissions.')
+        setIsLoading(false)
+        navigate('/')
       }
     }
     initMedia()
@@ -274,26 +290,66 @@ function Room() {
     navigate('/')
   }
 
+  if (isLoading) {
+    return <LoadingSpinner message="Setting up your meeting..." />
+  }
+
   return (
     <div className="h-screen flex flex-col bg-black">
       {/* Header */}
-      <div className="bg-gray-900 px-6 py-3 flex items-center justify-between border-b border-gray-800">
+      <div className="bg-gray-900 px-6 py-4 flex items-center justify-between border-b border-gray-800 shadow-lg">
         <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold text-white">Room: {roomId}</h2>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
+              <svg className="w-6 h-6 text-black" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+              </svg>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-white">Room: {roomId}</h2>
+                <button
+                  onClick={copyRoomLink}
+                  className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors group relative"
+                  title="Copy room link"
+                >
+                  {copied ? (
+                    <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-gray-400 group-hover:text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                      <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">{participants.length} participant{participants.length !== 1 ? 's' : ''}</p>
+            </div>
+          </div>
           {isRecording && (
-            <span className="flex items-center gap-2 text-red-500 text-sm">
-              <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-              Recording
-            </span>
+            <div className="flex items-center gap-2 bg-red-600/20 px-3 py-1.5 rounded-lg border border-red-600/50">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+              <span className="text-red-500 text-sm font-medium">Recording</span>
+            </div>
           )}
         </div>
-        <span className="text-gray-400 text-sm">{username}</span>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Logged in as</p>
+            <p className="text-sm font-medium text-white">{username}</p>
+          </div>
+          <div className="w-10 h-10 bg-gradient-to-br from-white to-gray-300 rounded-full flex items-center justify-center font-bold text-black shadow-lg">
+            {username.charAt(0).toUpperCase()}
+          </div>
+        </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Video Grid */}
-        <div className="flex-1 p-4">
+        <div className="flex-1 p-4 bg-black">
           <VideoGrid
             localStream={localStream}
             peers={peers}
@@ -306,7 +362,7 @@ function Room() {
 
         {/* Sidebar */}
         {(showChat || showParticipants) && (
-          <div className="w-80 bg-gray-900 border-l border-gray-800">
+          <div className="w-80 bg-gray-900 border-l border-gray-800 shadow-2xl">
             {showChat && (
               <Chat
                 messages={messages}
