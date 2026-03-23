@@ -9,14 +9,17 @@ const httpServer = createServer(app)
 app.use(cors())
 
 // Get allowed origins from environment or use defaults
-const allowedOrigins = process.env.CLIENT_URL 
-  ? process.env.CLIENT_URL.split(',')
-  : ['http://localhost:3000']
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://justmeetme.vercel.app',
+  'https://meet-me-ten.vercel.app'
+]
 
 const io = new Server(httpServer, {
   cors: {
     origin: allowedOrigins,
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 })
 
