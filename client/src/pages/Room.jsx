@@ -28,8 +28,12 @@ function Room() {
   const [copied, setCopied] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [screenSharingUsers, setScreenSharingUsers] = useState({}) // Track who is sharing
+  const [screenStreams, setScreenStreams] = useState({}) // Store screen streams separately
+  const [cameraStream, setCameraStream] = useState(null) // Store camera stream when screen sharing
+  const [localScreenStream, setLocalScreenStream] = useState(null) // Store local screen stream
   
   const peerConnections = useRef({})
+  const screenPeerConnections = useRef({}) // Separate connections for screen
   const mediaRecorder = useRef(null)
   const recordedChunks = useRef([])
 
@@ -83,6 +87,24 @@ function Room() {
 
     newSocket.on('user-joined', ({ userId, username: newUsername }) => {
       setParticipants(prev => [...prev, { userId, username: newUsername }])
+      
+      // If we're currently screen sharing, send screen to the new user
+      if (isScreenSharing && localScreenStream) {
+        setTimeout(async () => {
+          try {
+            const pc = createScreenPeerConnection(userId)
+            localScreenStream.getTracks().forEach(track => {
+              pc.addTrack(track, localScreenStream)
+            })
+            
+            const offer = await pc.createOffer()
+            await pc.setLocalDescription(offer)
+            newSocket.emit('screen-stream-offer', { offer, toUserId: userId })
+          } catch (error) {
+            console.error('Error sending screen to new user:', error)
+          }
+        }, 500)
+      }
     })
 
     newSocket.on('user-left', ({ userId }) => {
@@ -113,9 +135,49 @@ function Room() {
           updated[userId] = sharingUsername
         } else {
           delete updated[userId]
+          // Remove screen stream when sharing stops
+          setScreenStreams(prev => {
+            const newStreams = { ...prev }
+            delete newStreams[userId]
+            return newStreams
+          })
         }
         return updated
       })
+    })
+
+    newSocket.on('screen-stream-offer', async ({ offer, fromUserId }) => {
+      try {
+        const pc = createScreenPeerConnection(fromUserId)
+        await pc.setRemoteDescription(new RTCSessionDescription(offer))
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        newSocket.emit('screen-stream-answer', { answer, toUserId: fromUserId })
+      } catch (error) {
+        console.error('Error handling screen offer:', error)
+      }
+    })
+
+    newSocket.on('screen-stream-answer', async ({ answer, fromUserId }) => {
+      try {
+        const pc = screenPeerConnections.current[fromUserId]
+        if (pc && pc.signalingState !== 'stable') {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer))
+        }
+      } catch (error) {
+        console.error('Error handling screen answer:', error)
+      }
+    })
+
+    newSocket.on('screen-ice-candidate', async ({ candidate, fromUserId }) => {
+      try {
+        const pc = screenPeerConnections.current[fromUserId]
+        if (pc && candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate))
+        }
+      } catch (error) {
+        console.error('Error adding screen ICE candidate:', error)
+      }
     })
 
     return () => {
@@ -257,6 +319,42 @@ function Room() {
     return pc
   }
 
+  const createScreenPeerConnection = (userId) => {
+    // Close existing screen connection if any
+    if (screenPeerConnections.current[userId]) {
+      screenPeerConnections.current[userId].close()
+    }
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    })
+
+    // Handle incoming screen tracks
+    pc.ontrack = (event) => {
+      console.log('Received screen track from:', userId)
+      setScreenStreams(prev => ({
+        ...prev,
+        [userId]: event.streams[0]
+      }))
+    }
+
+    // Handle ICE candidates for screen
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('screen-ice-candidate', {
+          candidate: event.candidate,
+          toUserId: userId
+        })
+      }
+    }
+
+    screenPeerConnections.current[userId] = pc
+    return pc
+  }
+
   const createOffer = async (userId) => {
     try {
       const pc = createPeerConnection(userId)
@@ -289,28 +387,22 @@ function Room() {
 
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-      // Stop screen sharing - return to camera
+      // Stop screen sharing
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        const videoTrack = stream.getVideoTracks()[0]
-        
-        // Send camera back to all peers
-        Object.values(peerConnections.current).forEach(pc => {
-          const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video')
-          if (sender) {
-            sender.replaceTrack(videoTrack)
-          }
-        })
-        
-        // Update local stream
-        const oldVideoTrack = localStream.getVideoTracks()[0]
-        if (oldVideoTrack) {
-          oldVideoTrack.stop()
-          localStream.removeTrack(oldVideoTrack)
+        // Stop the screen stream tracks
+        if (localScreenStream) {
+          localScreenStream.getTracks().forEach(track => track.stop())
+          setLocalScreenStream(null)
         }
-        localStream.addTrack(videoTrack)
         
         setIsScreenSharing(false)
+        
+        // Close all screen peer connections
+        Object.values(screenPeerConnections.current).forEach(pc => pc.close())
+        screenPeerConnections.current = {}
+        
+        // Clear camera stream reference
+        setCameraStream(null)
         
         // Notify others that screen sharing stopped
         if (socket) {
@@ -321,30 +413,51 @@ function Room() {
           })
         }
       } catch (error) {
-        console.error('Error returning to camera:', error)
+        console.error('Error stopping screen share:', error)
       }
     } else {
       // Start screen sharing
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
           video: {
-            cursor: 'always'
+            cursor: 'always',
+            displaySurface: 'monitor'
           },
           audio: false
         })
+        
         const screenTrack = screenStream.getVideoTracks()[0]
         
-        // Send screen to all peers
-        Object.values(peerConnections.current).forEach(pc => {
-          const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video')
-          if (sender) {
-            sender.replaceTrack(screenTrack)
+        // Store screen stream and camera stream
+        setLocalScreenStream(screenStream)
+        setCameraStream(localStream)
+        
+        // Send screen to all peers via separate connection
+        Object.keys(peerConnections.current).forEach(async (userId) => {
+          try {
+            const pc = createScreenPeerConnection(userId)
+            screenStream.getTracks().forEach(track => {
+              pc.addTrack(track, screenStream)
+            })
+            
+            const offer = await pc.createOffer()
+            await pc.setLocalDescription(offer)
+            socket.emit('screen-stream-offer', { offer, toUserId: userId })
+          } catch (error) {
+            console.error('Error creating screen offer for', userId, error)
           }
         })
         
         // Handle when user stops sharing via browser UI
         screenTrack.onended = () => {
           setIsScreenSharing(false)
+          setLocalScreenStream(null)
+          setCameraStream(null)
+          
+          // Close all screen peer connections
+          Object.values(screenPeerConnections.current).forEach(pc => pc.close())
+          screenPeerConnections.current = {}
+          
           // Notify others
           if (socket) {
             socket.emit('screen-sharing-status', { 
@@ -353,21 +466,6 @@ function Room() {
               username 
             })
           }
-          // Return to camera automatically
-          navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-            .then(stream => {
-              const videoTrack = stream.getVideoTracks()[0]
-              Object.values(peerConnections.current).forEach(pc => {
-                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video')
-                if (sender) sender.replaceTrack(videoTrack)
-              })
-              const oldVideoTrack = localStream.getVideoTracks()[0]
-              if (oldVideoTrack) {
-                oldVideoTrack.stop()
-                localStream.removeTrack(oldVideoTrack)
-              }
-              localStream.addTrack(videoTrack)
-            })
         }
         
         setIsScreenSharing(true)
@@ -382,6 +480,9 @@ function Room() {
         }
       } catch (error) {
         console.error('Error sharing screen:', error)
+        if (error.name !== 'NotAllowedError') {
+          alert('Could not share screen. Please try again.')
+        }
       }
     }
   }
@@ -431,7 +532,11 @@ function Room() {
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop())
     }
+    if (localScreenStream) {
+      localScreenStream.getTracks().forEach(track => track.stop())
+    }
     Object.values(peerConnections.current).forEach(pc => pc.close())
+    Object.values(screenPeerConnections.current).forEach(pc => pc.close())
     if (socket) socket.disconnect()
     navigate('/')
   }
@@ -528,6 +633,8 @@ function Room() {
             isMuted={isMuted}
             isScreenSharing={isScreenSharing}
             screenSharingUsers={screenSharingUsers}
+            screenStreams={screenStreams}
+            cameraStream={cameraStream}
           />
         </div>
 

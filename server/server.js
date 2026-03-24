@@ -101,6 +101,28 @@ io.on('connection', (socket) => {
     })
   })
 
+  // Screen stream signaling (separate from camera)
+  socket.on('screen-stream-offer', ({ offer, toUserId }) => {
+    io.to(toUserId).emit('screen-stream-offer', {
+      offer,
+      fromUserId: socket.id
+    })
+  })
+
+  socket.on('screen-stream-answer', ({ answer, toUserId }) => {
+    io.to(toUserId).emit('screen-stream-answer', {
+      answer,
+      fromUserId: socket.id
+    })
+  })
+
+  socket.on('screen-ice-candidate', ({ candidate, toUserId }) => {
+    io.to(toUserId).emit('screen-ice-candidate', {
+      candidate,
+      fromUserId: socket.id
+    })
+  })
+
   // Handle disconnect
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id)
