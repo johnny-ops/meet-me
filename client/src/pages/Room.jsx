@@ -478,10 +478,12 @@ function Room() {
         
         const screenTrack = screenStream.getVideoTracks()[0]
         
-        // Store screen stream and camera stream
+        // IMPORTANT: Set states immediately and in the right order
+        setIsScreenSharing(true)
         setLocalScreenStream(screenStream)
         setCameraStream(localStream)
         
+        console.log('States updated - isScreenSharing: true, localScreenStream set, cameraStream set')
         console.log('Sending screen to', Object.keys(peerConnections.current).length, 'peers')
         
         // Send screen to all peers via separate connection
@@ -526,8 +528,6 @@ function Room() {
           }
         }
         
-        setIsScreenSharing(true)
-        
         // Notify others that screen sharing started
         if (socket) {
           socket.emit('screen-sharing-status', { 
@@ -538,6 +538,7 @@ function Room() {
         }
         
         console.log('Screen share started successfully')
+        console.log('Final state check - isScreenSharing should be true, localScreenStream:', !!screenStream)
       } catch (error) {
         console.error('Error sharing screen:', error)
         if (error.name === 'NotAllowedError') {

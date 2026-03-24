@@ -3,6 +3,18 @@ import { useEffect, useRef, useState } from 'react'
 function VideoGrid({ localStream, peers, username, participants, isVideoOff, isMuted, isScreenSharing, screenSharingUsers, screenStreams, cameraStream, localScreenStream }) {
   const localVideoRef = useRef(null)
 
+  // Debug logging
+  useEffect(() => {
+    console.log('VideoGrid props updated:', {
+      isScreenSharing,
+      hasLocalScreenStream: !!localScreenStream,
+      hasCameraStream: !!cameraStream,
+      screenStreamsCount: Object.keys(screenStreams || {}).length,
+      localScreenStreamId: localScreenStream?.id,
+      localScreenStreamTracks: localScreenStream?.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled }))
+    })
+  }, [isScreenSharing, localScreenStream, cameraStream, screenStreams])
+
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream
@@ -36,6 +48,12 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
 
   // If someone is screen sharing, show different layout
   if (hasScreenShare) {
+    console.log('Screen share active:', { 
+      isScreenSharing, 
+      hasLocalScreenStream: !!localScreenStream,
+      screenStreamsCount: Object.keys(screenStreams || {}).length 
+    })
+    
     return (
       <div className="flex flex-col h-full gap-3">
         {/* Screen Share Area - Large */}
@@ -190,21 +208,44 @@ function ScreenShareView({ screenStream, cameraStream, username, isMuted, isLoca
   const [screenReady, setScreenReady] = useState(false)
 
   useEffect(() => {
+    console.log('ScreenShareView - screenStream changed:', {
+      hasStream: !!screenStream,
+      streamId: screenStream?.id,
+      tracks: screenStream?.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState }))
+    })
+    
     if (screenRef.current && screenStream) {
+      console.log('Setting screen srcObject')
       screenRef.current.srcObject = screenStream
-      setScreenReady(true)
+      
+      // Force play
+      const playPromise = screenRef.current.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log('Screen video playing successfully')
+            setScreenReady(true)
+          })
+          .catch(err => {
+            console.error('Error playing screen:', err)
+            setScreenReady(false)
+          })
+      }
       
       // Add event listener to check if stream is active
       screenRef.current.onloadedmetadata = () => {
-        screenRef.current.play().catch(err => console.error('Error playing screen:', err))
+        console.log('Screen metadata loaded')
+        screenRef.current.play().catch(err => console.error('Error playing screen on metadata:', err))
       }
     } else {
+      console.log('No screen stream or ref')
       setScreenReady(false)
     }
   }, [screenStream])
 
   useEffect(() => {
     if (cameraRef.current && cameraStream) {
+      console.log('Setting camera srcObject for PIP')
       cameraRef.current.srcObject = cameraStream
       
       // Add event listener for camera
@@ -217,12 +258,15 @@ function ScreenShareView({ screenStream, cameraStream, username, isMuted, isLoca
   return (
     <div className="relative w-full h-full bg-gray-900 rounded-xl overflow-hidden">
       {/* Screen Share - Large */}
-      {screenStream && screenReady ? (
+      {screenStream ? (
         <video
           ref={screenRef}
           autoPlay
           playsInline
+          muted={false}
+          controls={false}
           className="w-full h-full object-contain bg-black"
+          style={{ maxWidth: '100%', maxHeight: '100%' }}
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-gray-800">
@@ -231,6 +275,8 @@ function ScreenShareView({ screenStream, cameraStream, username, isMuted, isLoca
               <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
             </svg>
             <p className="text-gray-400 text-sm">Loading screen share...</p>
+            <p className="text-gray-500 text-xs mt-2">Stream: {screenStream ? 'Present' : 'Missing'}</p>
+            <p className="text-gray-500 text-xs">Ready: {screenReady ? 'Yes' : 'No'}</p>
           </div>
         </div>
       )}
