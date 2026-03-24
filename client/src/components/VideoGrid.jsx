@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-function VideoGrid({ localStream, peers, username, participants, isVideoOff, isMuted, isScreenSharing, screenSharingUsers, screenStreams, cameraStream }) {
+function VideoGrid({ localStream, peers, username, participants, isVideoOff, isMuted, isScreenSharing, screenSharingUsers, screenStreams, cameraStream, localScreenStream }) {
   const localVideoRef = useRef(null)
 
   useEffect(() => {
@@ -40,10 +40,10 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
       <div className="flex flex-col h-full gap-3">
         {/* Screen Share Area - Large */}
         <div className="flex-1 relative">
-          {isScreenSharing && cameraStream ? (
+          {isScreenSharing && localScreenStream ? (
             // Local user is sharing - show their screen
             <ScreenShareView
-              screenStream={null}
+              screenStream={localScreenStream}
               cameraStream={cameraStream}
               username={username}
               isMuted={isMuted}
@@ -69,9 +69,12 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
         </div>
 
         {/* Camera Grid - Small thumbnails at bottom */}
-        <div className="h-32 flex gap-2 overflow-x-auto">
-          {/* Local camera */}
-          {!isScreenSharing && (
+        <div className="h-32 flex gap-2 overflow-x-auto pb-1">
+          {/* Local camera - always show when not screen sharing, or show in thumbnail when screen sharing */}
+          {isScreenSharing ? (
+            // When local user is screen sharing, their camera is shown in PIP, not here
+            null
+          ) : (
             <div className="relative bg-gray-900 rounded-lg overflow-hidden min-w-[180px] group">
               <video
                 ref={localVideoRef}
@@ -97,7 +100,7 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
           {Object.entries(peers).map(([userId, stream]) => {
             const participant = participants.find(p => p.userId === userId)
             const isSharing = screenSharingUsers && screenSharingUsers[userId]
-            // Don't show in thumbnail if they're the one sharing
+            // Don't show in thumbnail if they're the one sharing (their camera is in PIP)
             if (isSharing) return null
             return (
               <PeerThumbnail
@@ -184,43 +187,57 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
 function ScreenShareView({ screenStream, cameraStream, username, isMuted, isLocal }) {
   const screenRef = useRef(null)
   const cameraRef = useRef(null)
+  const [screenReady, setScreenReady] = useState(false)
 
   useEffect(() => {
     if (screenRef.current && screenStream) {
       screenRef.current.srcObject = screenStream
+      setScreenReady(true)
+      
+      // Add event listener to check if stream is active
+      screenRef.current.onloadedmetadata = () => {
+        screenRef.current.play().catch(err => console.error('Error playing screen:', err))
+      }
+    } else {
+      setScreenReady(false)
     }
   }, [screenStream])
 
   useEffect(() => {
     if (cameraRef.current && cameraStream) {
       cameraRef.current.srcObject = cameraStream
+      
+      // Add event listener for camera
+      cameraRef.current.onloadedmetadata = () => {
+        cameraRef.current.play().catch(err => console.error('Error playing camera:', err))
+      }
     }
   }, [cameraStream])
 
   return (
     <div className="relative w-full h-full bg-gray-900 rounded-xl overflow-hidden">
       {/* Screen Share - Large */}
-      {screenStream ? (
+      {screenStream && screenReady ? (
         <video
           ref={screenRef}
           autoPlay
           playsInline
-          className="w-full h-full object-contain"
+          className="w-full h-full object-contain bg-black"
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-gray-800">
-          <div className="text-center">
+          <div className="text-center animate-pulse">
             <svg className="w-16 h-16 text-gray-600 mx-auto mb-3" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
             </svg>
-            <p className="text-gray-400">Screen sharing...</p>
+            <p className="text-gray-400 text-sm">Loading screen share...</p>
           </div>
         </div>
       )}
 
       {/* Camera PIP - Small overlay */}
       {cameraStream && (
-        <div className="absolute bottom-4 right-4 w-48 h-36 bg-gray-900 rounded-lg overflow-hidden shadow-2xl border-2 border-white/20">
+        <div className="absolute bottom-4 right-4 w-48 h-36 bg-gray-900 rounded-lg overflow-hidden shadow-2xl border-2 border-white/20 hover:border-white/40 transition-all hover:scale-105">
           <video
             ref={cameraRef}
             autoPlay
@@ -228,7 +245,7 @@ function ScreenShareView({ screenStream, cameraStream, username, isMuted, isLoca
             playsInline
             className="w-full h-full object-cover"
           />
-          <div className="absolute bottom-2 left-2 bg-black/70 px-2 py-1 rounded text-xs text-white flex items-center gap-1">
+          <div className="absolute bottom-2 left-2 bg-black/80 px-2 py-1 rounded text-xs text-white flex items-center gap-1">
             <span>{username}{isLocal ? ' (You)' : ''}</span>
             {isMuted && (
               <svg className="w-3 h-3 text-red-500" fill="currentColor" viewBox="0 0 20 20">
@@ -240,11 +257,12 @@ function ScreenShareView({ screenStream, cameraStream, username, isMuted, isLoca
       )}
 
       {/* Screen sharing indicator */}
-      <div className="absolute top-4 left-4 bg-blue-600 px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg">
-        <svg className="w-5 h-5 text-white animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+      <div className="absolute top-4 left-4 bg-blue-600 px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg animate-fadeIn">
+        <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
         </svg>
-        <span className="text-white text-sm font-medium">{username} is sharing screen</span>
+        <span className="text-white text-sm font-medium">{username} is sharing</span>
       </div>
     </div>
   )

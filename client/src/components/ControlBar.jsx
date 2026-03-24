@@ -63,7 +63,7 @@ function ControlBar({
           <button
             onClick={onToggleScreenShare}
             className={`p-3 sm:p-4 rounded-full transition-all duration-300 transform hover:scale-110 active:scale-95 ${
-              isScreenSharing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'
+              isScreenSharing ? 'bg-blue-600 hover:bg-blue-700 ring-4 ring-blue-400/50 animate-pulse' : 'bg-gray-700 hover:bg-gray-600'
             }`}
             title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
           >
