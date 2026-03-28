@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-function VideoGrid({ localStream, peers, username, participants, isVideoOff, isMuted, isScreenSharing, screenSharingUsers, screenStreams, cameraStream, localScreenStream }) {
+function VideoGrid({ localStream, peers, username, participants, isVideoOff, isMuted, isScreenSharing, screenSharingUsers, screenStreams, cameraStream, localScreenStream, raisedHands, isHandRaised, isFullscreen }) {
   const localVideoRef = useRef(null)
 
   // Debug logging
@@ -181,12 +181,22 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
             </svg>
           )}
         </div>
+
+        {/* Raised Hand Indicator */}
+        {isHandRaised && (
+          <div className="absolute top-3 right-3 bg-yellow-500 p-2 rounded-full shadow-lg animate-bounce">
+            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M9 3a1 1 0 012 0v5.5a.5.5 0 001 0V4a1 1 0 112 0v4.5a.5.5 0 001 0V6a1 1 0 112 0v5a7 7 0 11-14 0V9a1 1 0 012 0v2.5a.5.5 0 001 0V4a1 1 0 012 0v4.5a.5.5 0 001 0V3z" clipRule="evenodd" />
+            </svg>
+          </div>
+        )}
       </div>
 
       {/* Peer Videos */}
       {Object.entries(peers).map(([userId, stream]) => {
         const participant = participants.find(p => p.userId === userId)
         const isSharing = screenSharingUsers && screenSharingUsers[userId]
+        const hasRaisedHand = raisedHands && raisedHands[userId]
         return (
           <PeerVideo
             key={userId}
@@ -194,6 +204,7 @@ function VideoGrid({ localStream, peers, username, participants, isVideoOff, isM
             username={participant?.username || 'Guest'}
             videoHeight={getVideoHeight()}
             isScreenSharing={isSharing}
+            hasRaisedHand={hasRaisedHand}
           />
         )
       })}
@@ -353,7 +364,7 @@ function PeerThumbnail({ stream, username }) {
   )
 }
 
-function PeerVideo({ stream, username, videoHeight, isScreenSharing }) {
+function PeerVideo({ stream, username, videoHeight, isScreenSharing, hasRaisedHand }) {
   const videoRef = useRef(null)
   const [hasVideo, setHasVideo] = useState(true)
 
@@ -413,6 +424,15 @@ function PeerVideo({ stream, username, videoHeight, isScreenSharing }) {
       <div className="absolute bottom-3 left-3 bg-black/70 px-3 py-1.5 rounded-lg backdrop-blur-sm group-hover:opacity-0 transition-opacity duration-300">
         <span className="text-white text-sm font-medium">{username}</span>
       </div>
+
+      {/* Raised Hand Indicator */}
+      {hasRaisedHand && (
+        <div className="absolute top-3 right-3 bg-yellow-500 p-2 rounded-full shadow-lg animate-bounce">
+          <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M9 3a1 1 0 012 0v5.5a.5.5 0 001 0V4a1 1 0 112 0v4.5a.5.5 0 001 0V6a1 1 0 112 0v5a7 7 0 11-14 0V9a1 1 0 012 0v2.5a.5.5 0 001 0V4a1 1 0 012 0v4.5a.5.5 0 001 0V3z" clipRule="evenodd" />
+          </svg>
+        </div>
+      )}
     </div>
   )
 }

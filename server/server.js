@@ -101,6 +101,15 @@ io.on('connection', (socket) => {
     })
   })
 
+  // Raise hand
+  socket.on('raise-hand', ({ roomId, username, isRaised }) => {
+    socket.to(roomId).emit('hand-raised', {
+      userId: socket.id,
+      username,
+      isRaised
+    })
+  })
+
   // Screen stream signaling (separate from camera)
   socket.on('screen-stream-offer', ({ offer, toUserId }) => {
     io.to(toUserId).emit('screen-stream-offer', {

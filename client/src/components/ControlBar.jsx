@@ -3,12 +3,16 @@ function ControlBar({
   isVideoOff,
   isScreenSharing,
   isRecording,
+  isHandRaised,
+  isFullscreen,
   onToggleMute,
   onToggleVideo,
   onToggleScreenShare,
   onToggleRecording,
   onToggleChat,
   onToggleParticipants,
+  onToggleRaiseHand,
+  onToggleFullscreen,
   onLeaveMeeting
 }) {
   return (
@@ -96,6 +100,24 @@ function ControlBar({
 
         <div className="hidden sm:block w-px h-8 bg-gray-700 mx-2"></div>
 
+        {/* Raise Hand Button */}
+        <div className="relative group">
+          <button
+            onClick={onToggleRaiseHand}
+            className={`p-3 sm:p-4 rounded-full transition-all duration-300 transform hover:scale-110 active:scale-95 ${
+              isHandRaised ? 'bg-yellow-600 hover:bg-yellow-700 animate-bounce' : 'bg-gray-700 hover:bg-gray-600'
+            }`}
+            title={isHandRaised ? 'Lower hand' : 'Raise hand'}
+          >
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M9 3a1 1 0 012 0v5.5a.5.5 0 001 0V4a1 1 0 112 0v4.5a.5.5 0 001 0V6a1 1 0 112 0v5a7 7 0 11-14 0V9a1 1 0 012 0v2.5a.5.5 0 001 0V4a1 1 0 012 0v4.5a.5.5 0 001 0V3z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <div className="hidden sm:block absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-black text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            {isHandRaised ? 'Lower hand' : 'Raise hand'}
+          </div>
+        </div>
+
         {/* Chat Button */}
         <div className="relative group">
           <button
@@ -125,6 +147,26 @@ function ControlBar({
           </button>
           <div className="hidden sm:block absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-black text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
             Participants
+          </div>
+        </div>
+
+        {/* Fullscreen Button */}
+        <div className="relative group">
+          <button
+            onClick={onToggleFullscreen}
+            className="p-3 sm:p-4 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-300 transform hover:scale-110 active:scale-95"
+            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 20 20">
+              {isFullscreen ? (
+                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l2.293 2.293a1 1 0 11-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm9 1a1 1 0 010-2h4a1 1 0 011 1v4a1 1 0 01-2 0V6.414l-2.293 2.293a1 1 0 11-1.414-1.414L13.586 5H12zm-9 7a1 1 0 012 0v1.586l2.293-2.293a1 1 0 111.414 1.414L6.414 15H8a1 1 0 010 2H4a1 1 0 01-1-1v-4zm13-1a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 010-2h1.586l-2.293-2.293a1 1 0 111.414-1.414L15 13.586V12a1 1 0 011-1z" clipRule="evenodd" />
+              ) : (
+                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l2.293 2.293a1 1 0 11-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm9 1a1 1 0 010-2h4a1 1 0 011 1v4a1 1 0 01-2 0V6.414l-2.293 2.293a1 1 0 11-1.414-1.414L13.586 5H12zm-9 7a1 1 0 012 0v1.586l2.293-2.293a1 1 0 111.414 1.414L6.414 15H8a1 1 0 010 2H4a1 1 0 01-1-1v-4zm13-1a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 010-2h1.586l-2.293-2.293a1 1 0 111.414-1.414L15 13.586V12a1 1 0 011-1z" clipRule="evenodd" />
+              )}
+            </svg>
+          </button>
+          <div className="hidden sm:block absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-black text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           </div>
         </div>
 

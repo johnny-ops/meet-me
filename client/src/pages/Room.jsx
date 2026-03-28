@@ -31,6 +31,10 @@ function Room() {
   const [screenStreams, setScreenStreams] = useState({}) // Store screen streams separately
   const [cameraStream, setCameraStream] = useState(null) // Store camera stream when screen sharing
   const [localScreenStream, setLocalScreenStream] = useState(null) // Store local screen stream
+  const [raisedHands, setRaisedHands] = useState({}) // Track raised hands
+  const [isHandRaised, setIsHandRaised] = useState(false) // Local hand raised state
+  const [isFullscreen, setIsFullscreen] = useState(false) // Fullscreen state
+  const [connectionQuality, setConnectionQuality] = useState('good') // Connection quality
   
   const peerConnections = useRef({})
   const screenPeerConnections = useRef({}) // Separate connections for screen
@@ -141,6 +145,19 @@ function Room() {
             delete newStreams[userId]
             return newStreams
           })
+        }
+        return updated
+      })
+    })
+
+    // Handle raised hands
+    newSocket.on('hand-raised', ({ userId, username: handUsername, isRaised }) => {
+      setRaisedHands(prev => {
+        const updated = { ...prev }
+        if (isRaised) {
+          updated[userId] = handUsername
+        } else {
+          delete updated[userId]
         }
         return updated
       })
@@ -582,6 +599,39 @@ function Room() {
     }
   }
 
+  const toggleRaiseHand = () => {
+    const newState = !isHandRaised
+    setIsHandRaised(newState)
+    
+    if (socket) {
+      socket.emit('raise-hand', {
+        roomId,
+        username,
+        isRaised: newState
+      })
+    }
+  }
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen()
+      setIsFullscreen(true)
+    } else {
+      document.exitFullscreen()
+      setIsFullscreen(false)
+    }
+  }
+
+  // Monitor fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
   const sendMessage = (message) => {
     if (socket && message.trim()) {
       socket.emit('chat-message', {
@@ -701,6 +751,9 @@ function Room() {
             screenStreams={screenStreams}
             cameraStream={cameraStream}
             localScreenStream={localScreenStream}
+            raisedHands={raisedHands}
+            isHandRaised={isHandRaised}
+            isFullscreen={isFullscreen}
           />
         </div>
 
@@ -731,6 +784,8 @@ function Room() {
         isVideoOff={isVideoOff}
         isScreenSharing={isScreenSharing}
         isRecording={isRecording}
+        isHandRaised={isHandRaised}
+        isFullscreen={isFullscreen}
         onToggleMute={toggleMute}
         onToggleVideo={toggleVideo}
         onToggleScreenShare={toggleScreenShare}
@@ -743,6 +798,8 @@ function Room() {
           setShowParticipants(!showParticipants)
           setShowChat(false)
         }}
+        onToggleRaiseHand={toggleRaiseHand}
+        onToggleFullscreen={toggleFullscreen}
         onLeaveMeeting={leaveMeeting}
       />
     </div>
