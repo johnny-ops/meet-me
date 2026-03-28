@@ -3,7 +3,7 @@
 A full-stack video conferencing application built with React, Node.js, WebRTC, and Socket.io. This application replicates the core functionality of Google Meet while maintaining a lightweight, user-friendly interface optimized for low bandwidth usage.
 
 ## Features
-eeddd
+
 1. Video & Audio Calls (WebRTC)
 2. Real-time Chat
 3. Screen Sharing
